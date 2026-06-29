@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 
 const api = axios.create({
-  baseURL: window.location.hostname === 'localhost' ? 'http://localhost:3000/api/v1' : 'http://192.168.1.55:3000/api/v1',
+  baseURL: 'https://depms-backend.onrender.com/api/v1',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
