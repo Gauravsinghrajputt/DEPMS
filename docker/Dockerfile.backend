@@ -1,0 +1,9 @@
+# Development stage
+FROM node:20-alpine AS development
+WORKDIR /app
+RUN apk add --no-cache dumb-init
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["dumb-init", "npm", "run", "dev"]
