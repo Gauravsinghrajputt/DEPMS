@@ -32,13 +32,13 @@ function setCookies(res, tokens) {
   res.cookie('access_token', tokens.access, {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? 'strict' : 'lax',
+    sameSite: 'none',
     maxAge: 8 * 60 * 60 * 1000, // 8 hours
   });
   res.cookie('refresh_token', tokens.refresh, {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? 'strict' : 'lax',
+    sameSite: 'none',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/api/v1/auth/refresh',
   });
