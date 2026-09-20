@@ -20,6 +20,8 @@ const reportRoutes = require('./routes/report.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const auditRoutes = require('./routes/audit.routes');
+const hourlyRoutes = require('./routes/hourly.routes');
+
 
 const app = express();
 
@@ -68,9 +70,11 @@ app.use(`${v1}/reports`, reportRoutes);
 app.use(`${v1}/dashboard`, dashboardRoutes);
 app.use(`${v1}/notifications`, notificationRoutes);
 app.use(`${v1}/audit-logs`, auditRoutes);
+app.use(`${v1}/hourly`, hourlyRoutes);
 
 // ── Error handling ──────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
 module.exports = app;
+
