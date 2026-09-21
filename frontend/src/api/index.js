@@ -139,4 +139,13 @@ export const auditApi = {
   list: (params) => api.get('/audit-logs', { params }),
 };
 
+// Hourly entries
+export const hourlyApi = {
+  today: () => api.get('/hourly/today'),
+  todayFor: (userId) => api.get(`/hourly/today/${userId}`),
+  update: (data) => api.post('/hourly/update', data),
+  byDate: (params) => api.get('/hourly/date', { params }),
+  teamToday: () => api.get('/hourly/team/today'),
+};
+
 export default api;

@@ -1,196 +1,194 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { entryApi } from '@/api';
-import { Spinner, PageHeader, ProgressBar, ProgressRing } from '@/components/shared/UI';
-import { CheckCircle2, Clock, Sun, Sunset, Send, AlertCircle } from 'lucide-react';
+import { hourlyApi } from '@/api';
+import { PageHeader, Spinner } from '@/components/shared/UI';
+import { Clock, CheckCircle2, TrendingDown, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
+const SLOTS = [
+  { slot: 9,  label: '9–10 AM' },
+  { slot: 10, label: '10–11 AM' },
+  { slot: 11, label: '11–12 PM' },
+  { slot: 12, label: '12–1 PM' },
+  { slot: 13, label: '1–2 PM' },
+  { slot: 14, label: '2–3 PM' },
+  { slot: 15, label: '3–4 PM' },
+  { slot: 16, label: '4–5 PM' },
+  { slot: 17, label: '5–6 PM' },
+  { slot: 18, label: '6–7 PM' },
+  { slot: 19, label: '7–8 PM' },
+  { slot: 20, label: '8–9 PM' },
+];
+
 export default function EmployeeEntry() {
   const qc = useQueryClient();
-  const [notes, setNotes] = useState('');
-  const [firstHalf, setFirstHalf] = useState('');
-  const [secondHalf, setSecondHalf] = useState('');
+  const [counts, setCounts] = useState({});
+  const currentHour = new Date().getHours();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['entry', 'today'],
-    queryFn: () => entryApi.today().then((r) => r.data.data),
+    queryKey: ['hourly', 'today'],
+    queryFn: () => hourlyApi.today().then((r) => r.data.data),
+    refetchInterval: 60000,
     onSuccess: (d) => {
-      setFirstHalf(String(d.entry?.first_half_count || ''));
-      setSecondHalf(String(d.entry?.second_half_count || ''));
+      const map = {};
+      d.slots.forEach((s) => { map[s.hour_slot] = s.count; });
+      setCounts(map);
     },
   });
 
-  const invalidate = () => {
-    qc.invalidateQueries(['entry', 'today']);
-    qc.invalidateQueries(['dashboard', 'employee']);
-  };
-
-  const fhMutation = useMutation({
-    mutationFn: (count) => entryApi.updateFirstHalf({ count: parseInt(count) }),
-    onSuccess: (r) => { toast.success('First half saved!'); invalidate(); },
-  });
-
-  const shMutation = useMutation({
-    mutationFn: (count) => entryApi.updateSecondHalf({ count: parseInt(count) }),
-    onSuccess: () => { toast.success('Second half saved!'); invalidate(); },
-  });
-
-  const submitMutation = useMutation({
-    mutationFn: () => entryApi.submit({ notes }),
-    onSuccess: () => { toast.success('Day submitted successfully! 🎉'); invalidate(); },
+  const updateMut = useMutation({
+    mutationFn: ({ slot, count }) => hourlyApi.update({ hour_slot: slot, count: parseInt(count) }),
+    onSuccess: (_, vars) => {
+      toast.success(`${SLOTS.find(s => s.slot === vars.slot)?.label} saved!`);
+      qc.invalidateQueries(['hourly', 'today']);
+      qc.invalidateQueries(['dashboard', 'employee']);
+    },
+    onError: () => toast.error('Save failed!'),
   });
 
   if (isLoading) return <Spinner />;
 
-  const entry = data?.entry;
-  const stats = data?.stats;
-  const submitted = entry?.is_submitted;
+  const total = data?.total_today || 0;
+  const dailyTarget = data?.daily_target || 0;
+  const deficit = total - dailyTarget;
+  const achievement = dailyTarget > 0 ? Math.min(100, Math.round((total / dailyTarget) * 100)) : 0;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto animate-fade-in">
+    <div className="max-w-2xl mx-auto space-y-4 animate-fade-in">
       <PageHeader
         title="Daily Entry"
         sub={format(new Date(), 'EEEE, dd MMMM yyyy')}
       />
 
-      {/* Status bar */}
-      <div className={`card border-l-4 flex items-center justify-between ${submitted ? 'border-green-500 bg-green-50' : 'border-yellow-400 bg-yellow-50'}`}>
-        <div className="flex items-center gap-2">
-          {submitted ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Clock className="w-5 h-5 text-yellow-600" />}
-          <span className="font-medium text-sm">{submitted ? 'Day Submitted' : 'Entry In Progress'}</span>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="card text-center py-4">
+          <div className="text-2xl font-bold text-primary-600">{total}</div>
+          <div className="text-xs text-gray-500 mt-1">Total Today</div>
         </div>
-        {submitted && entry.submitted_at && (
-          <span className="text-xs text-gray-500">Submitted at {entry.submitted_at}</span>
-        )}
-      </div>
-
-      {/* Progress widgets */}
-      {stats && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="card flex flex-col items-center gap-2 py-4">
-            <ProgressRing pct={stats.daily_progress_pct} size={90} stroke={8} />
-            <p className="text-xs text-gray-500 font-medium">Today's Progress</p>
-            <p className="text-sm text-gray-600">{stats.today_completed} / {stats.daily_target}</p>
-          </div>
-          <div className="card flex flex-col gap-3 justify-center">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Monthly</span>
-              <span className="font-semibold text-primary-600">{stats.monthly_achievement_pct}%</span>
-            </div>
-            <ProgressBar pct={stats.monthly_achievement_pct} />
-            <div className="text-xs text-gray-500 space-y-0.5">
-              <div className="flex justify-between"><span>Remaining</span><span className="font-medium text-gray-700">{stats.monthly_remaining?.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span>Required daily avg</span><span className="font-medium text-gray-700">{stats.required_daily_avg}</span></div>
-            </div>
-          </div>
+        <div className="card text-center py-4">
+          <div className="text-2xl font-bold text-gray-700">{dailyTarget}</div>
+          <div className="text-xs text-gray-500 mt-1">Daily Target</div>
         </div>
-      )}
-
-      {/* First Half Entry */}
-      <div className={`card ${submitted ? 'opacity-60 pointer-events-none' : ''}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <Sun className="w-5 h-5 text-orange-500" />
-          <h3 className="font-semibold text-gray-700">First Half (Before Lunch)</h3>
-        </div>
-        <div className="flex gap-3 items-end">
-          <div className="flex-1">
-            <label className="label">Forms Completed</label>
-            <input
-              type="number" min="0"
-              className="input"
-              placeholder="0"
-              value={firstHalf}
-              onChange={(e) => setFirstHalf(e.target.value)}
-            />
+        <div className="card text-center py-4">
+          <div className={`text-2xl font-bold ${deficit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+            {deficit >= 0 ? `+${deficit}` : deficit}
           </div>
-          <button
-            className="btn-primary"
-            onClick={() => fhMutation.mutate(firstHalf)}
-            disabled={fhMutation.isPending || !firstHalf}
-          >
-            {fhMutation.isPending ? 'Saving...' : 'Save'}
-          </button>
+          <div className="text-xs text-gray-500 mt-1 flex items-center justify-center gap-1">
+            {deficit >= 0
+              ? <TrendingUp className="w-3 h-3 text-green-500" />
+              : <TrendingDown className="w-3 h-3 text-red-500" />}
+            Deficit
+          </div>
         </div>
       </div>
 
-      {/* Second Half Entry */}
-      <div className={`card ${submitted ? 'opacity-60 pointer-events-none' : ''}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <Sunset className="w-5 h-5 text-purple-500" />
-          <h3 className="font-semibold text-gray-700">Second Half (After Lunch)</h3>
+      {/* Progress Bar */}
+      <div className="card">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="font-medium text-gray-700">Today's Progress</span>
+          <span className="font-bold text-primary-600">{achievement}%</span>
         </div>
-        <div className="flex gap-3 items-end">
-          <div className="flex-1">
-            <label className="label">Forms Completed</label>
-            <input
-              type="number" min="0"
-              className="input"
-              placeholder="0"
-              value={secondHalf}
-              onChange={(e) => setSecondHalf(e.target.value)}
-            />
-          </div>
-          <button
-            className="btn-primary"
-            onClick={() => shMutation.mutate(secondHalf)}
-            disabled={shMutation.isPending || !secondHalf}
-          >
-            {shMutation.isPending ? 'Saving...' : 'Save'}
-          </button>
+        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              achievement >= 100 ? 'bg-green-500' :
+              achievement >= 60 ? 'bg-primary-500' :
+              achievement >= 30 ? 'bg-yellow-500' : 'bg-red-500'
+            }`}
+            style={{ width: `${Math.min(100, achievement)}%` }}
+          />
         </div>
       </div>
 
-      {/* Total summary */}
-      {entry && (
-        <div className="card bg-gray-50">
-          <h3 className="font-semibold text-gray-700 mb-3">Today's Summary</h3>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-blue-600">{entry.first_half_count || 0}</div>
-              <div className="text-xs text-gray-500 mt-0.5">First Half</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-purple-600">{entry.second_half_count || 0}</div>
-              <div className="text-xs text-gray-500 mt-0.5">Second Half</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-green-600">{entry.completed_forms || 0}</div>
-              <div className="text-xs text-gray-500 mt-0.5">Total</div>
-            </div>
-          </div>
+      {/* Hourly Slots */}
+      <div className="card p-0 overflow-hidden">
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-primary-600" />
+          <span className="font-semibold text-gray-700">Hourly Entry</span>
         </div>
-      )}
 
-      {/* End of day submit */}
-      {!submitted && (
-        <div className="card border border-dashed border-gray-300">
-          <div className="flex items-start gap-2 mb-3">
-            <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-gray-600">
-              Submitting will lock today's entry. Make sure both halves are updated before submitting.
-            </p>
-          </div>
-          <div className="mb-3">
-            <label className="label">Notes (optional)</label>
-            <textarea
-              rows={2}
-              className="input resize-none"
-              placeholder="Any remarks for today..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-          <button
-            className="btn-primary w-full flex items-center justify-center gap-2"
-            onClick={() => submitMutation.mutate()}
-            disabled={submitMutation.isPending}
-          >
-            <Send className="w-4 h-4" />
-            {submitMutation.isPending ? 'Submitting...' : 'Submit End of Day'}
-          </button>
+        <div className="divide-y divide-gray-50">
+          {SLOTS.map((s) => {
+            const isPast = s.slot < currentHour;
+            const isActive = s.slot === currentHour;
+            const isFuture = s.slot > currentHour;
+            const savedCount = data?.slots?.find(sl => sl.hour_slot === s.slot)?.count || 0;
+            const inputVal = counts[s.slot] !== undefined ? counts[s.slot] : savedCount;
+
+            return (
+              <div
+                key={s.slot}
+                className={`flex items-center gap-3 px-5 py-3 transition-colors ${
+                  isActive ? 'bg-primary-50 border-l-4 border-primary-500' :
+                  isFuture ? 'opacity-40 bg-gray-50' : 'hover:bg-gray-50'
+                }`}
+              >
+                {/* Time label */}
+                <div className="w-20 shrink-0">
+                  <span className={`text-sm font-medium ${isActive ? 'text-primary-700' : 'text-gray-600'}`}>
+                    {s.label}
+                  </span>
+                  {isActive && (
+                    <div className="text-xs text-primary-500 font-medium">Current</div>
+                  )}
+                </div>
+
+                {/* Input */}
+                <div className="flex-1">
+                  {isFuture ? (
+                    <div className="h-9 bg-gray-100 rounded-lg flex items-center px-3">
+                      <span className="text-gray-400 text-sm">—</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      className={`w-full h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                        isActive ? 'border-primary-300 bg-white' : 'border-gray-200 bg-white'
+                      }`}
+                      placeholder="0"
+                      value={inputVal || ''}
+                      onChange={(e) => setCounts(prev => ({ ...prev, [s.slot]: e.target.value }))}
+                      disabled={isFuture}
+                    />
+                  )}
+                </div>
+
+                {/* Save button / Status */}
+                <div className="w-20 shrink-0 flex justify-end">
+                  {isFuture ? (
+                    <span className="text-xs text-gray-400">Locked</span>
+                  ) : (
+                    <button
+                      onClick={() => updateMut.mutate({ slot: s.slot, count: inputVal || 0 })}
+                      disabled={updateMut.isPending}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        savedCount > 0
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+                      }`}
+                    >
+                      {savedCount > 0 ? (
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> {savedCount}
+                        </span>
+                      ) : 'Save'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
+
+        {/* Total row */}
+        <div className="px-5 py-3 bg-gray-50 border-t flex justify-between items-center">
+          <span className="font-semibold text-gray-700">Total Today</span>
+          <span className="text-xl font-bold text-primary-700">{total}</span>
+        </div>
+      </div>
     </div>
   );
 }
