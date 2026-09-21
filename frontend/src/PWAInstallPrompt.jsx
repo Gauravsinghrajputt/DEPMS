@@ -25,15 +25,15 @@ export default function PWAInstallPrompt() {
           <span className="text-white font-bold text-lg">D</span>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-800 text-sm">DEPMS App Install Karo</p>
-          <p className="text-xs text-gray-500 mt-0.5">Home screen pe add karo</p>
+          <p className="font-semibold text-gray-800 text-sm">DEPMS App Install</p>
+          <p className="text-xs text-gray-500 mt-0.5">Add to Home Screen</p>
         </div>
         <div className="flex flex-col gap-1 shrink-0">
           <button onClick={install} className="bg-primary-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-primary-700 flex items-center gap-1">
             <Download className="w-3 h-3" /> Install
           </button>
           <button onClick={() => setShow(false)} className="text-gray-400 text-xs px-3 py-1 flex items-center gap-1">
-            <X className="w-3 h-3" /> Baad mein
+            <X className="w-3 h-3" /> Not Now
           </button>
         </div>
       </div>
