@@ -17,6 +17,20 @@ const HOUR_SLOTS = [
   { slot: 20, label: '8-9 PM' },
 ];
 
+function getISTHour() {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  return istTime.getUTCHours();
+}
+
+function getISTDate() {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  return istTime.toISOString().split('T')[0];
+}
+
 async function getTodayHourly(req, res) {
   const userId = req.params.userId || req.user.id;
   if (req.user.role === 'employee' && userId !== req.user.id) {
@@ -24,8 +38,8 @@ async function getTodayHourly(req, res) {
   }
 
   const db = getDB();
-  const today = new Date().toISOString().split('T')[0];
-  const currentHour = new Date().getHours();
+  const today = getISTDate();
+  const currentHour = getISTHour();
 
   const existing = await db('hourly_entries')
     .where({ user_id: userId, entry_date: today })
@@ -46,7 +60,6 @@ async function getTodayHourly(req, res) {
 
   const total = existing.reduce((sum, e) => sum + e.count, 0);
 
-  // Get target
   const now = new Date();
   const target = await db('targets').where({
     user_id: userId,
@@ -80,13 +93,13 @@ async function updateHourlyEntry(req, res) {
     throw new AppError('Invalid hour slot.', 400);
   }
 
-  const currentHour = new Date().getHours();
+  const currentHour = getISTHour();
   if (hour_slot > currentHour) {
     throw new AppError('Cannot enter data for future hours.', 400);
   }
 
   const db = getDB();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getISTDate();
   const slotLabel = HOUR_SLOTS.find(s => s.slot === hour_slot).label;
 
   await db('hourly_entries')
@@ -101,7 +114,6 @@ async function updateHourlyEntry(req, res) {
     .onConflict(['user_id', 'entry_date', 'hour_slot'])
     .merge(['count', 'updated_at']);
 
-  // Update daily_entries total
   const totalRow = await db('hourly_entries')
     .where({ user_id: req.user.id, entry_date: today })
     .sum('count as total')
@@ -147,7 +159,7 @@ async function getHourlyByDate(req, res) {
 
 async function getTeamHourlyToday(req, res) {
   const db = getDB();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getISTDate();
 
   let memberQuery = db('users').where('is_active', true);
   if (req.user.role === 'team_leader') {
@@ -161,10 +173,11 @@ async function getTeamHourlyToday(req, res) {
       .orderBy('hour_slot')
       .select('hour_slot', 'slot_label', 'count');
 
+    const now = new Date();
     const target = await db('targets').where({
       user_id: m.id,
-      year: new Date().getFullYear(),
-      month: new Date().getMonth() + 1,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
     }).first();
 
     const total = entries.reduce((sum, e) => sum + e.count, 0);
@@ -182,4 +195,49 @@ async function getTeamHourlyToday(req, res) {
   res.json({ success: true, data: result });
 }
 
-module.exports = { getTodayHourly, updateHourlyEntry, getHourlyByDate, getTeamHourlyToday };
+async function adminEditHourly(req, res) {
+  const { user_id, entry_date, hour_slot, count } = req.body;
+
+  if (!user_id || !entry_date || hour_slot === undefined || count === undefined) {
+    throw new AppError('user_id, entry_date, hour_slot, count required.', 400);
+  }
+
+  const db = getDB();
+  const slotInfo = HOUR_SLOTS.find(s => s.slot === hour_slot);
+  if (!slotInfo) throw new AppError('Invalid hour slot.', 400);
+
+  await db('hourly_entries')
+    .insert({
+      user_id,
+      entry_date,
+      hour_slot,
+      slot_label: slotInfo.label,
+      count: parseInt(count),
+      updated_at: new Date(),
+    })
+    .onConflict(['user_id', 'entry_date', 'hour_slot'])
+    .merge(['count', 'updated_at']);
+
+  const totalRow = await db('hourly_entries')
+    .where({ user_id, entry_date })
+    .sum('count as total')
+    .first();
+
+  const total = parseInt(totalRow?.total) || 0;
+
+  await db('daily_entries')
+    .insert({
+      user_id,
+      entry_date,
+      completed_forms: total,
+      updated_at: new Date(),
+    })
+    .onConflict(['user_id', 'entry_date'])
+    .merge(['completed_forms', 'updated_at']);
+
+  await res.locals.auditLog('EDIT_HOURLY', 'hourly_entries', null, null, { user_id, entry_date, hour_slot, count });
+
+  res.json({ success: true, message: 'Entry updated by admin.', data: { total } });
+}
+
+module.exports = { getTodayHourly, updateHourlyEntry, getHourlyByDate, getTeamHourlyToday, adminEditHourly };

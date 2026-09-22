@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { hourlyApi } from '@/api';
 import { PageHeader, Spinner } from '@/components/shared/UI';
@@ -24,7 +24,14 @@ const SLOTS = [
 export default function EmployeeEntry() {
   const qc = useQueryClient();
   const [counts, setCounts] = useState({});
-  const currentHour = new Date().getHours();
+
+  // IST current hour
+  const getISTHour = () => {
+    const now = new Date();
+    const istTime = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    return istTime.getUTCHours();
+  };
+  const currentHour = getISTHour();
 
   const { data, isLoading } = useQuery({
     queryKey: ['hourly', 'today'],
@@ -53,6 +60,9 @@ export default function EmployeeEntry() {
   const dailyTarget = data?.daily_target || 0;
   const deficit = total - dailyTarget;
   const achievement = dailyTarget > 0 ? Math.min(100, Math.round((total / dailyTarget) * 100)) : 0;
+
+  // Sirf current aur past slots dikhao
+  const visibleSlots = SLOTS.filter((s) => s.slot <= currentHour);
 
   return (
     <div className="max-w-2xl mx-auto space-y-4 animate-fade-in">
@@ -102,46 +112,50 @@ export default function EmployeeEntry() {
         </div>
       </div>
 
-      {/* Hourly Slots */}
+      {/* Hourly Slots — sirf current aur past */}
       <div className="card p-0 overflow-hidden">
-        <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-primary-600" />
-          <span className="font-semibold text-gray-700">Hourly Entry</span>
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-primary-600" />
+            <span className="font-semibold text-gray-700">Hourly Entry</span>
+          </div>
+          <span className="text-xs text-gray-400">
+            {visibleSlots.length} slot{visibleSlots.length !== 1 ? 's' : ''} available
+          </span>
         </div>
 
-        <div className="divide-y divide-gray-50">
-          {SLOTS.map((s) => {
-            const isPast = s.slot < currentHour;
-            const isActive = s.slot === currentHour;
-            const isFuture = s.slot > currentHour;
-            const savedCount = data?.slots?.find(sl => sl.hour_slot === s.slot)?.count || 0;
-            const inputVal = counts[s.slot] !== undefined ? counts[s.slot] : savedCount;
+        {visibleSlots.length === 0 ? (
+          <div className="px-5 py-8 text-center text-gray-400 text-sm">
+            Entry starts at 9 AM
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {visibleSlots.map((s) => {
+              const isActive = s.slot === currentHour;
+              const savedCount = data?.slots?.find(sl => sl.hour_slot === s.slot)?.count || 0;
+              const inputVal = counts[s.slot] !== undefined ? counts[s.slot] : savedCount;
 
-            return (
-              <div
-                key={s.slot}
-                className={`flex items-center gap-3 px-5 py-3 transition-colors ${
-                  isActive ? 'bg-primary-50 border-l-4 border-primary-500' :
-                  isFuture ? 'opacity-40 bg-gray-50' : 'hover:bg-gray-50'
-                }`}
-              >
-                {/* Time label */}
-                <div className="w-20 shrink-0">
-                  <span className={`text-sm font-medium ${isActive ? 'text-primary-700' : 'text-gray-600'}`}>
-                    {s.label}
-                  </span>
-                  {isActive && (
-                    <div className="text-xs text-primary-500 font-medium">Current</div>
-                  )}
-                </div>
+              return (
+                <div
+                  key={s.slot}
+                  className={`flex items-center gap-3 px-5 py-3 transition-colors ${
+                    isActive
+                      ? 'bg-primary-50 border-l-4 border-primary-500'
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  {/* Time label */}
+                  <div className="w-20 shrink-0">
+                    <span className={`text-sm font-medium ${isActive ? 'text-primary-700' : 'text-gray-600'}`}>
+                      {s.label}
+                    </span>
+                    {isActive && (
+                      <div className="text-xs text-primary-500 font-medium">Current</div>
+                    )}
+                  </div>
 
-                {/* Input */}
-                <div className="flex-1">
-                  {isFuture ? (
-                    <div className="h-9 bg-gray-100 rounded-lg flex items-center px-3">
-                      <span className="text-gray-400 text-sm">—</span>
-                    </div>
-                  ) : (
+                  {/* Input */}
+                  <div className="flex-1">
                     <input
                       type="number"
                       min="0"
@@ -151,16 +165,11 @@ export default function EmployeeEntry() {
                       placeholder="0"
                       value={inputVal || ''}
                       onChange={(e) => setCounts(prev => ({ ...prev, [s.slot]: e.target.value }))}
-                      disabled={isFuture}
                     />
-                  )}
-                </div>
+                  </div>
 
-                {/* Save button / Status */}
-                <div className="w-20 shrink-0 flex justify-end">
-                  {isFuture ? (
-                    <span className="text-xs text-gray-400">Locked</span>
-                  ) : (
+                  {/* Save button */}
+                  <div className="w-20 shrink-0 flex justify-end">
                     <button
                       onClick={() => updateMut.mutate({ slot: s.slot, count: inputVal || 0 })}
                       disabled={updateMut.isPending}
@@ -176,12 +185,12 @@ export default function EmployeeEntry() {
                         </span>
                       ) : 'Save'}
                     </button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Total row */}
         <div className="px-5 py-3 bg-gray-50 border-t flex justify-between items-center">
